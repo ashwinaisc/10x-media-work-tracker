@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `completed_hours` real DEFAULT 0 NOT NULL;
