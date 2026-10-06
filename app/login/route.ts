@@ -29,6 +29,6 @@ export async function POST(request:Request){
  }
 
  if(!cookieValue)return page(returnTo,'Incorrect email, username, or password.');
- const response=NextResponse.redirect(new URL(returnTo,url.origin),303);response.cookies.set('__studio_local_user',cookieValue,{httpOnly:true,sameSite:'strict',secure:false,path:'/',maxAge:60*60*8});return response;
+ const response=NextResponse.redirect(new URL(returnTo,url.origin),303);response.cookies.set('__studio_local_user',cookieValue,{httpOnly:true,sameSite:'strict',secure:url.protocol==='https:',path:'/',maxAge:60*60*8});return response;
  }catch{return page(returnTo,'The database is temporarily unreachable. Your account has not changed. Check the internet connection and try again.',503)}
 }
