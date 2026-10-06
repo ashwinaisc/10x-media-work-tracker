@@ -20,7 +20,9 @@ export function postgresDatabase(config: string) {
 }
 
 function directPostgres(connectionString:string){
- const pool=new pg.Pool({connectionString,ssl:{rejectUnauthorized:false},options:'-c search_path=studio_tracker,public',max:3,idleTimeoutMillis:30000});
+ const databaseUrl=new URL(connectionString);
+ databaseUrl.searchParams.set('options','-c search_path=studio_tracker,public');
+ const pool=new pg.Pool({connectionString:databaseUrl.toString(),ssl:{rejectUnauthorized:false},max:3,idleTimeoutMillis:30000});
  const postgresSql=(sql:string)=>{let index=0;return sql.replace(/\?/g,()=>`$${++index}`)};
  class Statement{constructor(public sql:string,public values:unknown[]=[]){ }bind(...values:unknown[]){return new Statement(this.sql,values)}async all<T>(){const r=await pool.query(postgresSql(this.sql),this.values);return {success:true,results:r.rows as T[],meta:{changes:r.rowCount||0}}}async first<T>(){const r=await this.all<T>();return r.results[0]||null}async run(){const r=await pool.query(postgresSql(this.sql),this.values);return {success:true,results:[],meta:{changes:r.rowCount||0}}}}
  return {prepare:(sql:string)=>new Statement(sql),batch:async(statements:Statement[])=>{const client=await pool.connect();try{await client.query('BEGIN');const out=[];for(const s of statements){const r=await client.query(postgresSql(s.sql),s.values);out.push({success:true,results:r.rows,meta:{changes:r.rowCount||0}})}await client.query('COMMIT');return out}catch(e){await client.query('ROLLBACK');throw e}finally{client.release()}}};
