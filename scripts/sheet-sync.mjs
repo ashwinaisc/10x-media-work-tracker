@@ -20,11 +20,13 @@ export function memberFingerprint(base,person){
  return digest({month:base.month,person,types:d.goal_types,plans,tasks:d.daily_tasks.filter(t=>t.member_id===person.id),submissions:d.submissions.filter(s=>ids.has(s.plan_id)),special:d.special_tasks.filter(t=>t.member_id===person.id)});
 }
 const fields={people:'id,name,email,employee_id,role,manager_id,job,active',goal_types:'id,manager_id,name,unit',plans:'id,member_id,type_id,month,target,hours_per_job',daily_tasks:'id,member_id,work_date,original_work_date,title,category,quantity,due_date,priority,status,estimated_hours,actual_hours,notes,started_at,elapsed_seconds,submitted_at,version',submissions:'id,plan_id,daily_task_id,title,url,completed,quantity,status,feedback,version',special_tasks:'id,member_id,assigned_by,title,instructions,due_date,priority,status,output_url,feedback,version,created_at'};
-export function snapshot(dbPath){const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('BEGIN');const data=Object.fromEntries(Object.entries(fields).map(([table,columns])=>[table,db.prepare(`SELECT ${columns} FROM ${table} ORDER BY id`).all()]));db.exec('COMMIT');return data}finally{db.close()}}
+// Tasks whose deletion was approved are kept for the EOD report but never reach the sheet.
+const visible={daily_tasks:" WHERE status!='deleted'"};
+export function snapshot(dbPath){const db=new DatabaseSync(dbPath,{readOnly:true});try{db.exec('BEGIN');const data=Object.fromEntries(Object.entries(fields).map(([table,columns])=>[table,db.prepare(`SELECT ${columns} FROM ${table}${visible[table]||''} ORDER BY id`).all()]));db.exec('COMMIT');return data}finally{db.close()}}
 let stopping=false,lastHash='',lastSuccess=0;
 async function currentSnapshot(dbPath){
  if(!existsSync(path.join(root,'.env.supabase')))return snapshot(dbPath);
- const client=supabaseClient();try{await client.connect();await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const data={};for(const [table,columns] of Object.entries(fields)){data[table]=(await client.query(`SELECT ${columns} FROM ${table} ORDER BY id`)).rows}await client.query('COMMIT');return data}finally{await client.end()}
+ const client=supabaseClient();try{await client.connect();await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const data={};for(const [table,columns] of Object.entries(fields)){data[table]=(await client.query(`SELECT ${columns} FROM ${table}${visible[table]||''} ORDER BY id`)).rows}await client.query('COMMIT');return data}finally{await client.end()}
 }
 // Called by the authenticated local bridge immediately after a task save.
 export async function syncMemberNow(memberId){
@@ -35,7 +37,7 @@ export async function syncMemberNow(memberId){
  try{
   await client.connect();
   person=(await client.query("SELECT id,name,email,employee_id,role,manager_id,job,active FROM people WHERE id=$1 AND role!='admin'",[memberId])).rows[0];
-  tasks=(await client.query(`SELECT ${fields.daily_tasks} FROM daily_tasks WHERE member_id=$1 ORDER BY work_date,id`,[memberId])).rows;
+  tasks=(await client.query(`SELECT ${fields.daily_tasks} FROM daily_tasks WHERE member_id=$1 AND status!='deleted' ORDER BY work_date,id`,[memberId])).rows;
  }finally{await client.end()}
  if(!person)throw Error('Unknown employee');
  const month=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}).slice(0,7);

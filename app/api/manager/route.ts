@@ -1,6 +1,6 @@
 import {getChatGPTUser} from '@/app/chatgpt-auth';
-import {database} from '@/db/raw';
-import type {Person,Plan,GoalType,Submission} from '@/lib/manager';
+import {database,syncTaskSheet} from '@/db/raw';
+import {linkRequired,type Person,type Plan,type GoalType,type Submission} from '@/lib/manager';
 type TimedTask={id:string;member_id:string;category:string;quantity:number;status:string;started_at:string|null;elapsed_seconds:number;submitted_at:string|null;delete_requested_at:string|null;delete_reason:string;version:number};
 export const dynamic='force-dynamic';
 class Problem extends Error{constructor(message:string,public status=400){super(message)}}
@@ -33,7 +33,7 @@ else if(b.action==='historical-import'){
   const type=await db.prepare('SELECT * FROM goal_types WHERE id=?').bind(plan.type_id).first<GoalType>();if(!type)throw new Problem('Goal type unavailable.');
   const amount=quantity(Number(entry.quantity),type.unit),actual=Number(entry.actual_hours);if(!Number.isFinite(actual)||actual<0||actual>1000)throw new Problem('Actual hours must be between 0 and 1000.');
   const key=[completed,title.toLowerCase(),type.name.toLowerCase(),url].join('|');if(seen.has(key))throw new Problem(`Duplicate entry: ${title}.`);seen.add(key);
-  if(await db.prepare('SELECT d.id FROM daily_tasks d LEFT JOIN submissions s ON s.daily_task_id=d.id WHERE d.member_id=? AND d.work_date=? AND lower(d.title)=lower(?) AND lower(d.category)=lower(?) AND COALESCE(s.url,\'\')=?').bind(me.id,completed,title,type.name,url).first())throw new Problem(`This work already exists: ${title}.`);
+  if(await db.prepare('SELECT d.id FROM daily_tasks d LEFT JOIN submissions s ON s.daily_task_id=d.id WHERE d.member_id=? AND d.status!=\'deleted\' AND d.work_date=? AND lower(d.title)=lower(?) AND lower(d.category)=lower(?) AND COALESCE(s.url,\'\')=?').bind(me.id,completed,title,type.name,url).first())throw new Problem(`This work already exists: ${title}.`);
   const taskId=crypto.randomUUID(),submissionId=crypto.randomUUID(),rate=plan.hours_per_job,estimated=rate===null?actual:Math.round(amount*rate*100)/100,seconds=Math.round(actual*3600);
   writes.push(db.prepare("INSERT INTO daily_tasks(id,member_id,work_date,title,category,quantity,due_date,priority,status,estimated_hours,actual_hours,notes,started_at,elapsed_seconds,submitted_at,version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)").bind(taskId,me.id,completed,title,type.name,amount,completed,'normal','done',estimated,actual,'Historical work entry',null,seconds,stamp));
   writes.push(db.prepare("INSERT INTO submissions(id,plan_id,daily_task_id,title,url,completed,quantity,status,feedback,version) VALUES(?,?,?,?,?,?,?,'review','',1)").bind(submissionId,plan.id,taskId,title,url,completed,amount));
@@ -45,6 +45,7 @@ else if(b.action==='submit'){
  const plan=await db.prepare('SELECT * FROM plans WHERE id=? AND member_id=?').bind(text(b.plan_id),me.id).first<Plan>();if(!plan)throw new Problem('Goal unavailable.',403);
  const type=await db.prepare('SELECT * FROM goal_types WHERE id=?').bind(plan.type_id).first<GoalType>();
  const amount=quantity(b.quantity,type!.unit),title=text(b.title),url=driveLink(b.url),completed=text(b.completed,10);
+ if(!url&&linkRequired(type?.name))throw new Problem('Add the Google Drive link for this work before submitting.');
  if(!/^\d{4}-\d{2}-\d{2}$/.test(completed)||!Number.isFinite(Date.parse(completed))||new Date(completed).toISOString().slice(0,10)!==completed||completed>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}))throw new Problem('Enter a valid completion date, no later than today.');
  const existing=b.id?await db.prepare('SELECT * FROM submissions WHERE id=? AND plan_id=?').bind(text(b.id),plan.id).first<Submission>():null;
  if(b.id&&(!existing||!['review','changes'].includes(existing.status)||existing.version!==b.version))throw new Problem('Submission changed. Refresh and try again.',409);
@@ -56,6 +57,7 @@ else if(b.action==='submit'){
  const taskId=existing?.daily_task_id||text(b.daily_task_id);
  const task=await db.prepare('SELECT * FROM daily_tasks WHERE id=? AND member_id=?').bind(taskId,me.id).first<TimedTask>();
  if(!task||task.category!==type?.name||task.status!=='ready'||task.elapsed_seconds<=0||task.submitted_at)throw new Problem('Mark a daily task complete in the same goal type before submitting.',400);
+ if(task.delete_requested_at)throw new Problem('This task is waiting for deletion approval and cannot be submitted.',409);
  if(await db.prepare('SELECT id FROM submissions WHERE daily_task_id=? AND id!=?').bind(task.id,existing?.id||'').first())throw new Problem('This daily task already has a submission.',409);
  const now=Date.now(),stamp=new Date(now).toISOString(),seconds=task.elapsed_seconds+(task.started_at?Math.max(0,Math.floor((now-Date.parse(task.started_at))/1000)):0),actual=Math.round(seconds/36)/100;
  const submissionWrite=existing
@@ -65,5 +67,8 @@ else if(b.action==='submit'){
  const result=await db.batch([submissionWrite,taskWrite]);if(result.some(r=>!r.meta.changes))throw new Problem('Task or submission changed. Refresh and try again.',409);
 }
 else if(b.action==='review'){manager();const s=await db.prepare('SELECT s.*,p.member_id FROM submissions s JOIN plans p ON p.id=s.plan_id WHERE s.id=?').bind(text(b.id)).first<Submission&{member_id:string}>();if(!s)throw new Problem('Submission unavailable.',404);await member(s.member_id);if(!['approved','changes'].includes(b.status))throw new Problem('Choose a review decision.');const feedback=b.status==='changes'?text(b.feedback,2000):'';const reviewWrite=db.prepare("UPDATE submissions SET status=?,feedback=?,version=version+1 WHERE id=? AND status='review' AND version=?").bind(b.status,feedback,s.id,b.version);if(b.status==='changes'&&s.daily_task_id){const reopen=db.prepare("UPDATE daily_tasks SET status='hold',submitted_at=NULL,version=version+1 WHERE id=? AND member_id=? AND status='done'").bind(s.daily_task_id,s.member_id);const results=await db.batch([reviewWrite,reopen]);if(results.some(r=>!r.meta.changes))throw new Problem('Submission changed. Refresh before reviewing.',409)}else{const result=await reviewWrite.run();if(!result.meta.changes)throw new Problem('Submission changed. Refresh before reviewing.',409)}}
-else if(b.action==='approve-task-delete'){manager();const task=await db.prepare('SELECT * FROM daily_tasks WHERE id=?').bind(text(b.id)).first<TimedTask>();if(!task)throw new Problem('Task unavailable.',404);await member(task.member_id);if(!task.delete_requested_at)throw new Problem('This task has no deletion request.');if(task.submitted_at)throw new Problem('Submitted tasks cannot be deleted.');const result=await db.prepare('DELETE FROM daily_tasks WHERE id=? AND member_id=? AND version=? AND delete_requested_at IS NOT NULL').bind(task.id,task.member_id,b.version).run();if(!result.meta.changes)throw new Problem('Task changed. Refresh and try again.',409)}
+else if(b.action==='reject-task-delete'){manager();const task=await db.prepare('SELECT * FROM daily_tasks WHERE id=?').bind(text(b.id)).first<TimedTask>();if(!task||task.status==='deleted')throw new Problem('Task unavailable.',404);await member(task.member_id);if(!task.delete_requested_at)throw new Problem('This task has no deletion request.');const result=await db.prepare("UPDATE daily_tasks SET delete_requested_at=NULL,delete_reason='',version=version+1 WHERE id=? AND member_id=? AND version=? AND delete_requested_at IS NOT NULL").bind(task.id,task.member_id,b.version).run();if(!result.meta.changes)throw new Problem('Task changed. Refresh and try again.',409)}
+else if(b.action==='approve-task-delete'){manager();const task=await db.prepare('SELECT * FROM daily_tasks WHERE id=?').bind(text(b.id)).first<TimedTask>();if(!task||task.status==='deleted')throw new Problem('Task unavailable.',404);await member(task.member_id);if(!task.delete_requested_at)throw new Problem('This task has no deletion request.');if(task.submitted_at)throw new Problem('Submitted tasks cannot be deleted.');const result=await db.prepare("UPDATE daily_tasks SET status='deleted',started_at=NULL,version=version+1 WHERE id=? AND member_id=? AND version=? AND delete_requested_at IS NOT NULL AND status!='deleted'").bind(task.id,task.member_id,b.version).run();if(!result.meta.changes)throw new Problem('Task changed. Refresh and try again.',409);
+ // The team lead's own sheet sync does not cover the employee whose task was removed.
+ await syncTaskSheet(task.member_id)}
 else throw new Problem('Unknown action.');return json(await snapshot())}catch(e){if(e instanceof SyntaxError||e instanceof TypeError)return json({error:'Check the submitted fields.'},400);return fail(e)}}

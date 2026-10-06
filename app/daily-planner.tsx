@@ -29,7 +29,7 @@ export type Task = {
   quantity: number;
   due_date: string;
   priority: "low" | "normal" | "high";
-  status: "todo" | "progress" | "hold" | "ready" | "done";
+  status: "todo" | "progress" | "hold" | "ready" | "done" | "deleted";
   estimated_hours: number;
   actual_hours: number;
   notes: string;
@@ -46,6 +46,7 @@ const statusLabels = {
   hold: "On Hold",
   ready: "Done",
   done: "Done",
+  deleted: "Deleted",
 };
 const duration = (seconds: number) => {
   const n = Math.max(0, Math.floor(seconds));
@@ -87,7 +88,10 @@ export default function DailyPlanner({
     [form, setForm] = useState<Record<string, string> | null>(null),
     [deleteTask, setDeleteTask] = useState<Task | null>(null),
     [deleteReason, setDeleteReason] = useState(""),
-    [reportMessage, setReportMessage] = useState("");
+    [reportMessage, setReportMessage] = useState(""),
+    [deletions, setDeletions] = useState<Task[]>([]),
+    [eodMode, setEodMode] = useState<"send" | "copy" | null>(null),
+    [eodReasons, setEodReasons] = useState<Record<string, string>>({});
   const [sheetState, setSheetState] = useState<
     "idle" | "saving" | "synced" | "pending"
   >("idle");
@@ -164,6 +168,16 @@ export default function DailyPlanner({
         setClock(receivedAt);
       }
       if (body.serverToday) setServerToday(body.serverToday);
+      // Team leads see every pending deletion request, whatever day is selected.
+      if (!personal && ["manager", "admin"].includes(data.me.role)) {
+        const pending = await fetch("/api/daily-tasks?deletions=1", {
+          cache: "no-store",
+        });
+        if (pending.ok)
+          setDeletions(
+            ((await pending.json()) as { tasks?: Task[] }).tasks || [],
+          );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load tasks.");
     } finally {
@@ -186,7 +200,10 @@ export default function DailyPlanner({
     };
   }, [date, personal]);
   const authoritativeClock = clock + serverOffset,
-    shown = tasks.filter((t) => member === "all" || t.member_id === member),
+    selected = tasks.filter((t) => member === "all" || t.member_id === member),
+    shown = selected.filter((t) => t.status !== "deleted"),
+    // Approved deletions stay out of the task list and are only reported in the EOD.
+    removed = selected.filter((t) => t.status === "deleted"),
     done = shown.filter((t) => ["ready", "done"].includes(t.status)).length,
     progress = shown.filter((t) => t.status === "progress").length,
     hours = shown.reduce(
@@ -252,10 +269,10 @@ export default function DailyPlanner({
         body: JSON.stringify(body),
       });
       const result = (await r.json()) as { error?: string };
-      if (!r.ok) throw new Error(result.error || "Could not approve deletion.");
+      if (!r.ok) throw new Error(result.error || "Could not update the deletion request.");
       await Promise.all([refresh(), syncSheet()]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not approve deletion.");
+      setError(e instanceof Error ? e.message : "Could not update the deletion request.");
     } finally {
       setBusy(false);
     }
@@ -286,16 +303,50 @@ export default function DailyPlanner({
   }
   function sodReport() {
     const [year, month, day] = date.split("-");
-    return `SOD\nDATE: ${day}-${month}-${year}\nName: ${data.me.name}\nTask:\n${shown.map((task, index) => `${index + 1}. ${task.title}`).join("\n")}`;
+    return `SOD\nDATE: ${day}-${month}-${year}\nName: ${data.me.name}\nTask:\n${shown.map((task, index) => `${index + 1}. ${task.title}${task.notes.trim() ? `\n   Notes: ${task.notes.trim().replace(/\s*\n\s*/g, " ")}` : ""}`).join("\n")}`;
   }
-  function eodReport() {
-    const [year, month, day] = date.split("-");
-    return `EOD\nDATE: ${day}-${month}-${year}\nName: ${data.me.name}\nTask:\n${shown.map((task, index) => `${index + 1}. ${task.title} — ${["ready", "done"].includes(task.status) ? "Done" : "In Progress"}`).join("\n")}`;
+  const finished = (task: Task) =>
+      ["ready", "done"].includes(task.status) || !!task.submitted_at,
+    eodPending = shown.filter((task) => !finished(task));
+  function eodReport(reasons: Record<string, string>) {
+    const [year, month, day] = date.split("-"),
+      completed = shown.filter(finished);
+    return `EOD Status Report – ${day}-${month}-${year}\nName: ${data.me.name}\n\nCompleted Today:\n${completed.length ? completed.map((task) => `* ${task.title}`).join("\n") : "* None"}${eodPending.length ? `\n\nPending / Incomplete from SOD:\n${eodPending.map((task) => `* ${task.title} – ${(reasons[task.id] || "").trim()}`).join("\n")}` : ""}${removed.length ? `\n\nDeleted from SOD:\n${removed.map((task) => `* ${task.title} – Reason: ${task.delete_reason.trim().replace(/\s*\n\s*/g, " ")}`).join("\n")}` : ""}`;
   }
-  async function copySod() {
+  // Reasons for unfinished work are collected per report and are not stored.
+  function startEod(mode: "send" | "copy") {
+    if (!eodPending.length) {
+      deliverEod(mode, eodReport({}));
+      return;
+    }
+    setEodReasons(
+      Object.fromEntries(
+        eodPending.map((task) => [
+          task.id,
+          task.delete_requested_at
+            ? `Deletion requested: ${task.delete_reason}`
+            : "",
+        ]),
+      ),
+    );
+    setEodMode(mode);
+  }
+  function deliverEod(mode: "send" | "copy", text: string) {
+    if (mode === "send") openEodWhatsApp(text);
+    else void copyReport("EOD", text);
+  }
+  function submitEod(e: FormEvent) {
+    e.preventDefault();
+    if (!eodMode) return;
+    deliverEod(eodMode, eodReport(eodReasons));
+    setEodMode(null);
+  }
+  async function copyReport(kind: "SOD" | "EOD", text: string) {
     try {
-      await navigator.clipboard.writeText(sodReport());
-      setReportMessage("SOD report copied. Paste it into your office group.");
+      await navigator.clipboard.writeText(text);
+      setReportMessage(
+        `${kind} report copied. Paste it into your office group.`,
+      );
       window.setTimeout(() => setReportMessage(""), 3500);
     } catch {
       setReportMessage("Could not copy the report. Please try again.");
@@ -308,9 +359,9 @@ export default function DailyPlanner({
       "noopener,noreferrer",
     );
   }
-  function openEodWhatsApp() {
+  function openEodWhatsApp(text: string) {
     window.open(
-      `https://web.whatsapp.com/send?text=${encodeURIComponent(eodReport())}`,
+      `https://web.whatsapp.com/send?text=${encodeURIComponent(text)}`,
       "studio-whatsapp",
       "noopener,noreferrer",
     );
@@ -333,30 +384,44 @@ export default function DailyPlanner({
         </div>
         {creator && (
           <div className="actions">
-            <button
-              className="secondary"
-              disabled={!shown.length}
-              onClick={openWhatsApp}
-            >
-              <MessageCircle size={16} />
-              Send SOD on WhatsApp
-            </button>
-            <button
-              className="secondary"
-              disabled={!shown.length}
-              onClick={openEodWhatsApp}
-            >
-              <MessageCircle size={16} />
-              Send EOD on WhatsApp
-            </button>
-            <button
-              className="secondary"
-              disabled={!shown.length}
-              onClick={() => void copySod()}
-            >
-              <ClipboardCopy size={16} />
-              Copy SOD report
-            </button>
+            <span className="row">
+              <button
+                className="secondary"
+                disabled={!shown.length}
+                onClick={openWhatsApp}
+              >
+                <MessageCircle size={16} />
+                Send SOD on WhatsApp
+              </button>
+              <button
+                className="quiet"
+                aria-label="Copy SOD report"
+                title="Copy SOD report"
+                disabled={!shown.length}
+                onClick={() => void copyReport("SOD", sodReport())}
+              >
+                <ClipboardCopy size={16} />
+              </button>
+            </span>
+            <span className="row">
+              <button
+                className="secondary"
+                disabled={!shown.length && !removed.length}
+                onClick={() => startEod("send")}
+              >
+                <MessageCircle size={16} />
+                Send EOD on WhatsApp
+              </button>
+              <button
+                className="quiet"
+                aria-label="Copy EOD report"
+                title="Copy EOD report"
+                disabled={!shown.length && !removed.length}
+                onClick={() => startEod("copy")}
+              >
+                <ClipboardCopy size={16} />
+              </button>
+            </span>
             <button className="primary" onClick={() => edit()}>
               <Plus size={16} />
               Add task
@@ -391,6 +456,59 @@ export default function DailyPlanner({
             </button>
           )}
         </div>
+      )}
+      {managerView && deletions.length > 0 && (
+        <section className="work-surface">
+          <div className="toolbar">
+            <div>
+              <h2 className="manager-heading">Deletion requests</h2>
+              <p className="hint">
+                Tasks your team asked to delete, across all dates.
+              </p>
+            </div>
+            <span className="pill">{deletions.length}</span>
+          </div>
+          {deletions.map((t) => (
+            <div className="notice" key={t.id}>
+              <strong>{t.title}</strong>
+              <p>
+                {name(t.member_id)} · {t.category} · {t.work_date}
+                {t.submitted_at ? " · Already submitted" : ""}
+              </p>
+              <p>Reason: {t.delete_reason}</p>
+              <div className="daily-actions">
+                {!t.submitted_at && (
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() =>
+                      void managerAction({
+                        action: "approve-task-delete",
+                        id: t.id,
+                        version: t.version,
+                      })
+                    }
+                  >
+                    Approve deletion
+                  </button>
+                )}
+                <button
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void managerAction({
+                      action: "reject-task-delete",
+                      id: t.id,
+                      version: t.version,
+                    })
+                  }
+                >
+                  Reject request
+                </button>
+              </div>
+            </div>
+          ))}
+        </section>
       )}
       <div className="daily-controls">
         <label>
@@ -558,6 +676,7 @@ export default function DailyPlanner({
                 {creator && (
                   <div className="daily-actions">
                     {!t.submitted_at &&
+                      (!t.delete_requested_at || t.status === "progress") &&
                       t.status !== "done" &&
                       (t.status === "progress" ? (
                         <button
@@ -593,6 +712,7 @@ export default function DailyPlanner({
                         </button>
                       ))}
                     {!t.submitted_at &&
+                      !t.delete_requested_at &&
                       ["progress", "hold"].includes(t.status) &&
                       (t.started_at || t.elapsed_seconds > 0) && (
                         <button
@@ -610,6 +730,7 @@ export default function DailyPlanner({
                         </button>
                       )}
                     {!t.submitted_at &&
+                      !t.delete_requested_at &&
                       t.status === "ready" &&
                       onSubmitTask && (
                         <button
@@ -632,7 +753,7 @@ export default function DailyPlanner({
                           Edit submission
                         </button>
                       )}
-                    {!t.submitted_at && (
+                    {!t.submitted_at && !t.delete_requested_at && (
                       <>
                         <button
                           className="quiet"
@@ -654,6 +775,21 @@ export default function DailyPlanner({
                         </button>
                       </>
                     )}
+                    {t.delete_requested_at && (
+                      <button
+                        className="quiet"
+                        disabled={busy}
+                        onClick={() =>
+                          void action({
+                            action: "cancel-delete",
+                            id: t.id,
+                            version: t.version,
+                          })
+                        }
+                      >
+                        Withdraw deletion request
+                      </button>
+                    )}
                   </div>
                 )}
                 {managerView && t.delete_requested_at && (
@@ -673,6 +809,19 @@ export default function DailyPlanner({
                       }
                     >
                       Approve deletion
+                    </button>
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void managerAction({
+                          action: "reject-task-delete",
+                          id: t.id,
+                          version: t.version,
+                        })
+                      }
+                    >
+                      Reject request
                     </button>
                   </div>
                 )}
@@ -916,6 +1065,56 @@ export default function DailyPlanner({
               </button>
               <button className="primary" disabled={busy || !deleteReason.trim()}>
                 {busy ? "Submitting…" : "Send deletion request"}
+              </button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!eodMode}
+        onOpenChange={(open) => {
+          if (!open) setEodMode(null);
+        }}
+      >
+        <DialogContent className="dialog-body">
+          <DialogTitle>EOD status report</DialogTitle>
+          <DialogDescription>
+            Add the reason for delay or current status of each unfinished task.
+            These notes go into the report only and are not saved.
+          </DialogDescription>
+          <form className="form" onSubmit={submitEod}>
+            {eodPending.map((task) => (
+              <label key={task.id}>
+                {task.title}
+                <textarea
+                  required
+                  maxLength={300}
+                  value={eodReasons[task.id] || ""}
+                  onChange={(event) =>
+                    setEodReasons({
+                      ...eodReasons,
+                      [task.id]: event.target.value,
+                    })
+                  }
+                  placeholder="e.g. 60% done, waiting for assets"
+                />
+              </label>
+            ))}
+            <div className="actions">
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setEodMode(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                disabled={eodPending.some(
+                  (task) => !(eodReasons[task.id] || "").trim(),
+                )}
+              >
+                {eodMode === "send" ? "Send EOD on WhatsApp" : "Copy EOD report"}
               </button>
             </div>
           </form>
