@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `submission_daily_task` ON `submissions` (`daily_task_id`);

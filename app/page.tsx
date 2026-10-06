@@ -1,2 +1,2 @@
-import Studio from './studio';
-export default function Home(){return <Studio/>}
+import ManagerWorkspace from './manager-workspace';
+export default function Home(){return <ManagerWorkspace/>}

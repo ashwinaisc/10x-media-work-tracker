@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS special_tasks (
+ id TEXT PRIMARY KEY, member_id TEXT NOT NULL REFERENCES people(id),
+ assigned_by TEXT NOT NULL REFERENCES people(id), title TEXT NOT NULL,
+ instructions TEXT NOT NULL, due_date TEXT NOT NULL, priority TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'todo', output_url TEXT NOT NULL DEFAULT '',
+ feedback TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 0,
+ created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

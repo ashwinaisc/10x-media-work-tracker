@@ -1,0 +1,7 @@
+import {supabaseClient} from './supabase-connection.mjs';
+import assert from 'node:assert/strict';
+const db=supabaseClient(),name='SUPABASE_VERIFICATION_'+Date.now();
+try{await db.connect();const owner=(await db.query("SELECT * FROM people WHERE role='admin' LIMIT 1")).rows[0];const headers={'oai-authenticated-user-id':owner.user_id,'oai-authenticated-user-email':owner.email};const r=await fetch('http://127.0.0.1:8787/api/manager',{headers});const data=await r.json();assert.equal(r.status,200,JSON.stringify(data));assert.equal(data.people.length,Number((await db.query('SELECT count(*) FROM people')).rows[0].count));
+ const created=await fetch('http://127.0.0.1:8787/api/manager',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({action:'type',name,unit:'jobs'})});assert.equal(created.status,200,await created.text());assert.equal((await db.query('SELECT id FROM goal_types WHERE name=$1',[name])).rowCount,1);console.log('Verified app reads and writes directly to Supabase.');
+ await db.query('BEGIN');await db.query('INSERT INTO goal_types(id,manager_id,name,unit) VALUES($1,$2,$3,$4)',[name,'workspace',name+'_rollback','jobs']);await db.query('ROLLBACK');assert.equal((await db.query('SELECT id FROM goal_types WHERE id=$1',[name])).rowCount,0);console.log('Verified database rollback.');
+}finally{await db.query('DELETE FROM goal_types WHERE name=$1',[name]).catch(()=>{});await db.end()}

@@ -10,8 +10,8 @@ export const statuses={planned:'Planned',progress:'In progress',review:'In revie
 export type Kind=keyof typeof kinds; export type Role=keyof typeof roles; export type Status=keyof typeof statuses;
 export type Member={id:string;user_id:string|null;email:string;name:string;role:Role};
 export type Channel={id:string;name:string;folder:string};
-export type Task={id:string;title:string;channel_id:string;kind:Kind;due:string;assignee:string;status:Status;drive_url:string;completed:string;notes:string;feedback:string;scheduled:string;version:number;completed_hours:number};
+export type Task={id:string;title:string;channel_id:string;kind:Kind;due:string;assignee:string;status:Status;completed:string;notes:string;feedback:string;scheduled:string;version:number;completed_hours:number};
 export type Target={id:string;channel_id:string;month:string;kind:Kind;quantity:number};
-export type State={me:Member;channels:Channel[];members:Member[];tasks:Task[];targets:Target[]};
-export function driveId(url:string){try{const u=new URL(url);if(u.hostname!=='drive.google.com')return null;return u.pathname.match(/\/file\/d\/([\w-]+)/)?.[1]??(u.pathname==='/open'?u.searchParams.get('id'):null)}catch{return null}}
+export type PersonalGoal={id:string;member_id:string;month:string;kind:Kind;quantity:number;hours_per_job:number|null};
+export type State={me:Member;channels:Channel[];members:Member[];tasks:Task[];targets:Target[];personalGoals:PersonalGoal[]};
 export function localDate(d=new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}

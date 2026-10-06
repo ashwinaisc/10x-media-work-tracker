@@ -15,6 +15,55 @@
       "when": 1790060456770,
       "tag": "0001_perfect_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790065548529,
+      "tag": "0002_lean_venus",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790074751957,
+      "tag": "0003_striped_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790308359669,
+      "tag": "0004_vengeful_pete_wisdom",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790318604726,
+      "tag": "0005_silly_rockslide",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790318714470,
+      "tag": "0006_woozy_zombie",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790320000000,
+      "tag": "0007_add_others_goal_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790415276000,
+      "tag": "0008_add_original_work_date",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,14 @@
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_reels','workspace','Reels','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Reels');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_ads','workspace','Ads','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Ads');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_carousel','workspace','Carousel','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Carousel');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_video_carousel','workspace','Video Carousel','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Video Carousel');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_post','workspace','Post','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Post');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_story','workspace','Story','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Story');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_script_preparation','workspace','Script Preparation','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Script Preparation');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_shoot','workspace','Shoot','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Shoot');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_longform_video','workspace','Longform Video','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Longform Video');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_ai_job','workspace','AI Job','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='AI Job');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_hc_ideation','workspace','HC Ideation','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='HC Ideation');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_trailer','workspace','Trailer','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='Trailer');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_ffc','workspace','FFC','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='FFC');
+INSERT INTO goal_types(id,manager_id,name,unit) SELECT 'catalog_tagmango_reels','workspace','TagMango Reels','jobs' WHERE NOT EXISTS (SELECT 1 FROM goal_types WHERE manager_id='workspace' AND name='TagMango Reels');

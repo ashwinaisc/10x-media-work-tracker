@@ -5,9 +5,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 
-const localUserId = "local_seedy";
-const localEmail = "seedy@sites.test";
-const localFullName = "Seedy";
+
+const localUserId = process.env.STUDIO_LOCAL_ROLE === "creator" ? "local_test_designer" : process.env.STUDIO_LOCAL_ROLE === "manager" ? "local_manager" : "local_seedy";
+const localEmail = process.env.STUDIO_LOCAL_ROLE === "creator" ? "test.designer@example.com" : process.env.STUDIO_LOCAL_ROLE === "manager" ? "manager@studio.test" : "seedy@sites.test";
+const localFullName = process.env.STUDIO_LOCAL_ROLE === "creator" ? "Test Designer" : process.env.STUDIO_LOCAL_ROLE === "manager" ? "Local Manager" : "Seedy";
 const localCookieName = "__sites_local_auth";
 const localHosts = new Set(["localhost", "127.0.0.1", "::1"]);
 const localAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
@@ -41,6 +42,7 @@ export function sites({ mockAuth = true } = {}): Plugin {
     },
     configureServer(server) {
       if (!mockAuth) return;
+
       const secure = Boolean(server.config.server.https);
 
       server.config.logger.info(`Sites local sign-in: ${localEmail}`);
