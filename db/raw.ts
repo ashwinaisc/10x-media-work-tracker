@@ -1,7 +1,7 @@
 import {postgresDatabase} from './postgres';
-function config(){return process.env.SUPABASE_DATABASE_CONFIG||''}
+function config(){return process.env.SUPABASE_DATABASE_URL||process.env.SUPABASE_DATABASE_CONFIG||''}
 export async function syncTaskSheet(memberId:string){
- const value=config();
+ const value=process.env.SUPABASE_DATABASE_CONFIG||'';
  if(!value)return {status:'pending'};
  try{
   const options=JSON.parse(Buffer.from(value,'base64').toString('utf8'));
