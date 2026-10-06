@@ -4,4 +4,5 @@ export type Plan={id:string;member_id:string;type_id:string;month:string;target:
 export type Submission={url:string;id:string;plan_id:string;daily_task_id:string|null;title:string;completed:string;quantity:number;status:'review'|'approved'|'changes';feedback:string;version:number;actual_hours:number};
 export type ManagerState={me:Person;people:Person[];types:GoalType[];plans:Plan[];submissions:Submission[]};
 export function linkRequired(typeName:string|undefined){return !['others','ffc','schedule'].includes((typeName||'').trim().toLowerCase())}
-export function credit(plan:string,items:Submission[]){return Math.round(items.filter(s=>s.plan_id===plan&&s.status!=='changes').reduce((n,s)=>n+s.quantity,0)*100)/100}
+// Only approved work counts toward a goal; the Google Sheet reports follow the same rule.
+export function credit(plan:string,items:Submission[]){return Math.round(items.filter(s=>s.plan_id===plan&&s.status==='approved').reduce((n,s)=>n+s.quantity,0)*100)/100}

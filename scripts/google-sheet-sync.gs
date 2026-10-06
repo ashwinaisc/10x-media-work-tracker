@@ -70,22 +70,22 @@ function saveSnapshot_(ss,d,currentMonth,personId){
   index.push([person.employee_id||person.id,person.name,person.role,ss.getUrl()+'#gid='+s.getSheetId()]);
   const months=[...new Set([currentMonth,...d.plans.filter(p=>p.member_id===person.id).map(p=>p.month),...d.daily_tasks.filter(t=>t.member_id===person.id).map(t=>t.work_date.slice(0,7)),...work.filter(w=>w.member_id===person.id).map(w=>w.completed.slice(0,7))])].sort().reverse();
   if(personId){
-   const fingerprint=hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify({version:4,person,months,types,plans:d.plans.filter(p=>p.member_id===person.id),tasks:d.daily_tasks.filter(p=>p.member_id===person.id),work:work.filter(p=>p.member_id===person.id)})));
+   const fingerprint=hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify({version:5,person,months,types,plans:d.plans.filter(p=>p.member_id===person.id),tasks:d.daily_tasks.filter(p=>p.member_id===person.id),work:work.filter(p=>p.member_id===person.id)})));
    const props=PropertiesService.getScriptProperties(),key='REPORT_'+person.id;
-   const structure=hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify({person,months,types,plans:d.plans.filter(p=>p.member_id===person.id),work:work.filter(p=>p.member_id===person.id)})));
+   const structure=hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify({version:5,person,months,types,plans:d.plans.filter(p=>p.member_id===person.id),work:work.filter(p=>p.member_id===person.id)})));
    if(props.getProperty(key)!==fingerprint){
     if(props.getProperty(key+'_structure')!==structure||!updateTaskRows_(s,person,months,d))renderEmployee_(ss,s,person,months,d,types,work,summary,currentMonth);
     SpreadsheetApp.flush();props.setProperty(key,fingerprint);props.setProperty(key+'_structure',structure);
    }
   }else{
-   months.forEach(month=>{const last=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate();[[1,15,.5,'First half'],[16,last,.5,'Second half'],[1,last,1,'Full month']].forEach(([lo,hi,factor,label])=>{d.plans.filter(p=>p.member_id===person.id&&p.month===month).forEach(p=>{const t=types[p.type_id];if(!t)return;const target=p.target*factor,done=work.filter(w=>w.plan_id===p.id&&w.completed.slice(0,7)===month&&Number(w.completed.slice(8,10))>=lo&&Number(w.completed.slice(8,10))<=hi).reduce((n,w)=>n+w.quantity,0);summary.push([person.name,month,label,t.name,target,done,Math.max(0,target-done),target?Math.round(done/target*100)+'%':'—',t.unit])})})});
+   months.forEach(month=>{const last=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate();[[1,15,.5,'First half'],[16,last,.5,'Second half'],[1,last,1,'Full month']].forEach(([lo,hi,factor,label])=>{d.plans.filter(p=>p.member_id===person.id&&p.month===month).forEach(p=>{const t=types[p.type_id];if(!t)return;const target=p.target*factor,done=work.filter(w=>w.plan_id===p.id&&w.status==='approved'&&w.completed.slice(0,7)===month&&Number(w.completed.slice(8,10))>=lo&&Number(w.completed.slice(8,10))<=hi).reduce((n,w)=>n+w.quantity,0);summary.push([person.name,month,label,t.name,target,done,Math.max(0,target-done),target?Math.round(done/target*100)+'%':'—',t.unit])})})});
   }
 
  });
  if(personId)return;
  table_(sheet_(ss,'Employee Sheets'),index);table_(sheet_(ss,'Goal Report'),summary);
  d.goal_types.forEach(t=>{const s=sheet_(ss,t.name.replace(/[\[\]:*?\/\\]/g,' ').slice(0,90));const manual={};if(s.getLastRow()>1)s.getRange(2,1,s.getLastRow()-1,10).getValues().forEach(r=>{if(r[9])manual[r[9]]=r.slice(6,9)});const items=work.filter(w=>w.category===t.name).sort((a,b)=>b.completed.localeCompare(a.completed));table_(s,[['Date','Employee ID','Employee','Work / Task Name','Status','Output Link','Published / Unpublished','Published Work Link','Follower Count','Submission ID'],...items.map(w=>[w.completed,people[w.member_id]?.employee_id||w.member_id,people[w.member_id]?.name||'',w.title,w.status,w.url,...(manual[w.id]||['Unpublished','','']),w.id])]);s.getRange('G2:G1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Published','Unpublished'],true).build());s.hideColumns(10)});
- table_(sheet_(ss,'Settings'),[['Setting','Value'],['Tracker','10x Media Job Tracker'],['Last automatic save',new Date().toISOString()],['Data direction','App → Sheet'],['Current month',currentMonth],['Report policy','Submitted work counts unless changes requested; each half uses 50% target']]);
+ table_(sheet_(ss,'Settings'),[['Setting','Value'],['Tracker','10x Media Job Tracker'],['Last automatic save',new Date().toISOString()],['Data direction','App → Sheet'],['Current month',currentMonth],['Report policy','Only approved work counts as completed; each half uses 50% target']]);
  SpreadsheetApp.flush();syncProps.setProperty('SHARED_REPORTS',sharedHash);
 }
 
@@ -130,12 +130,14 @@ function renderEmployee_(ss,s,person,months,d,types,work,summary,currentMonth){
    reportFmt(4,r,7);s.getRange(r++,reportCol,1,7).setValues([['Goal type','Target','Completed','Pending','Progress','Unit','Outputs']]);
    const completed=work.filter(w=>w.member_id===person.id&&w.completed.slice(0,7)===month&&Number(w.completed.slice(8,10))>=lo&&Number(w.completed.slice(8,10))<=hi);
    let targetSum=0,doneSum=0,pendingSum=0;const goalLinks=[];
-   ownPlans.forEach(p=>{const ty=types[p.type_id];if(!ty)return;const target=p.target*factor,done=completed.filter(w=>w.plan_id===p.id).reduce((n,w)=>n+w.quantity,0),pending=Math.max(0,target-done);const sr=({'Carousel':5,'Schedule':6,'Story':7,'Others':8})[ty.name]||5;reportFmt(sr,r,7);if(colors[ty.name])s.getRange(r,reportCol,1,7).setBackground(colors[ty.name]);s.getRange(r,reportCol,1,7).setValues([[ty.name,target,done,pending,target?done/target:0,ty.unit,done?'':'No outputs']]);s.getRange(r,reportCol+4).setNumberFormat('0%');if(done)goalLinks.push(r);targetSum+=target;doneSum+=done;pendingSum+=pending;summary.push([person.name,month,label,ty.name,target,done,pending,target?Math.round(done/target*100)+'%':'—',ty.unit]);r++});
+   ownPlans.forEach(p=>{const ty=types[p.type_id];if(!ty)return;const target=p.target*factor,done=completed.filter(w=>w.plan_id===p.id&&w.status==='approved').reduce((n,w)=>n+w.quantity,0),pending=Math.max(0,target-done);const sr=({'Carousel':5,'Schedule':6,'Story':7,'Others':8})[ty.name]||5;reportFmt(sr,r,7);if(colors[ty.name])s.getRange(r,reportCol,1,7).setBackground(colors[ty.name]);s.getRange(r,reportCol,1,7).setValues([[ty.name,target,done,pending,target?done/target:0,ty.unit,done?'':'No outputs']]);s.getRange(r,reportCol+4).setNumberFormat('0%');if(done)goalLinks.push(r);targetSum+=target;doneSum+=done;pendingSum+=pending;summary.push([person.name,month,label,ty.name,target,done,pending,target?Math.round(done/target*100)+'%':'—',ty.unit]);r++});
    reportFmt(9,r,7);s.getRange(r,reportCol,1,7).setValues([['TOTAL GOAL',targetSum,doneSum,pendingSum,targetSum?doneSum/targetSum:0,ownPlans.every(p=>types[p.type_id]?.unit==='jobs')?'jobs':'units','—']]);s.getRange(r,reportCol+4).setNumberFormat('0%');r+=3;
-   title(r++,'COMPLETED WORK & OUTPUT LINKS',12);reportFmt(13,r,5);s.getRange(r++,reportCol,1,5).setValues([['Date','Goal type','Work / Ad name','Quantity','Output link']]);
+   // The template formats five columns; the review status column borrows the output link format.
+   const statusFmt=row=>s.getRange(row,reportCol+4).copyTo(s.getRange(row,reportCol+5),paste,false);
+   title(r++,'COMPLETED WORK & OUTPUT LINKS',12);reportFmt(13,r,5);statusFmt(r);s.getRange(r++,reportCol,1,6).setValues([['Date','Goal type','Work / Ad name','Quantity','Output link','Review status']]);
    goalLinks.forEach(gr=>s.getRange(gr,reportCol+6).setFormula('=HYPERLINK("#gid='+s.getSheetId()+'&range='+({12:'L',20:'T',28:'AB'})[reportCol]+r+'","View completed work")'));
-   completed.forEach(w=>{reportFmt(14,r,5);s.getRange(r,reportCol,1,5).setValues([[w.completed,w.category,w.title,w.quantity,''].map(safe_)]);if(link_(w.url))s.getRange(r,reportCol+4).setFormula(link_(w.url));r++});
-   if(!completed.length){reportFmt(14,r,5);r++}r+=3;reportEnd=Math.max(reportEnd,r);
+   completed.forEach(w=>{reportFmt(14,r,5);statusFmt(r);s.getRange(r,reportCol,1,6).setValues([[w.completed,w.category,w.title,w.quantity,'',({review:'Awaiting review',approved:'Approved'})[w.status]||w.status].map(safe_)]);if(link_(w.url))s.getRange(r,reportCol+4).setFormula(link_(w.url));r++});
+   if(!completed.length){reportFmt(14,r,5);statusFmt(r);r++}r+=3;reportEnd=Math.max(reportEnd,r);
   });
   const end=Math.max(reportEnd,first+tasks.length+7);ensure(end);if(month!==currentMonth){s.getRange(first+1,1,end-first-1,1).shiftRowGroupDepth(1);s.getRowGroup(first+1,1).collapse()}start=end+3;
  });

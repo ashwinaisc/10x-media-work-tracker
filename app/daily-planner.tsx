@@ -185,12 +185,12 @@ export default function DailyPlanner({
     }
   }
   // The request lifecycle intentionally starts when the selected day changes.
-  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, refreshToken, personal]);
   // The refresh callback intentionally follows the selected date.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const clockId = window.setInterval(() => setClock(Date.now()), 1000),
       syncId = window.setInterval(() => void refresh(), 30000);
@@ -198,6 +198,7 @@ export default function DailyPlanner({
       window.clearInterval(clockId);
       window.clearInterval(syncId);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, personal]);
   const authoritativeClock = clock + serverOffset,
     selected = tasks.filter((t) => member === "all" || t.member_id === member),
@@ -765,7 +766,13 @@ export default function DailyPlanner({
                         <button
                           className="quiet"
                           aria-label={`Request deletion of ${t.title}`}
-                          disabled={busy || !!t.delete_requested_at}
+                          disabled={
+                            busy ||
+                            !!t.delete_requested_at ||
+                            data.submissions.some(
+                              (s) => s.daily_task_id === t.id,
+                            )
+                          }
                           onClick={() => {
                             setDeleteTask(t);
                             setDeleteReason("");
@@ -797,7 +804,7 @@ export default function DailyPlanner({
                     <span className="hint">
                       Deletion requested: {t.delete_reason}
                     </span>
-                    <button
+                    {!t.submitted_at && <button
                       className="primary"
                       disabled={busy}
                       onClick={() =>
@@ -809,7 +816,7 @@ export default function DailyPlanner({
                       }
                     >
                       Approve deletion
-                    </button>
+                    </button>}
                     <button
                       className="secondary"
                       disabled={busy}

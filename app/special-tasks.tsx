@@ -10,6 +10,8 @@ export default function SpecialTasks({data,personal}:{data:ManagerState;personal
  const canAssign=!personal&&['admin','manager'].includes(data.me.role);
  const people=data.people.filter(p=>p.active&&p.id!==data.me.id&&(data.me.role==='admin'?['manager','creator'].includes(p.role):p.role==='creator'&&p.manager_id===data.me.id));
  async function refresh(){try{const r=await fetch('/api/special-tasks',{cache:'no-store'}),body=await r.json() as {error?:string;tasks:Task[]};if(!r.ok)throw new Error(body.error||'Request failed.');setTasks(body.tasks);setError('')}catch(e){setError(e instanceof Error?e.message:'Could not load special tasks.')}finally{setLoading(false)}}
+ // Load once on mount, then poll; the fetch sets state when it resolves.
+ // eslint-disable-next-line react-hooks/set-state-in-effect
  useEffect(()=>{void refresh();const id=setInterval(()=>void refresh(),30000);return ()=>clearInterval(id)},[]);
  async function action(payload:Record<string,unknown>){setBusy(true);setError('');try{const r=await fetch('/api/special-tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}),body=await r.json() as {error?:string;tasks:Task[]};if(!r.ok)throw new Error(body.error||'Request failed.');setMode('');await refresh()}catch(e){setError(e instanceof Error?e.message:'Could not save.')}finally{setBusy(false)}}
  function open(next:string,task?:Task){setSelected(task||null);setForm(next==='assign'?{member_id:people[0]?.id||'',title:'',instructions:'',due_date:localDate(),priority:'normal'}:{output_url:task?.output_url||'',feedback:''});setMode(next);setError('')}

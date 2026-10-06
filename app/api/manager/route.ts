@@ -47,6 +47,7 @@ else if(b.action==='submit'){
  const amount=quantity(b.quantity,type!.unit),title=text(b.title),url=driveLink(b.url),completed=text(b.completed,10);
  if(!url&&linkRequired(type?.name))throw new Problem('Add the Google Drive link for this work before submitting.');
  if(!/^\d{4}-\d{2}-\d{2}$/.test(completed)||!Number.isFinite(Date.parse(completed))||new Date(completed).toISOString().slice(0,10)!==completed||completed>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}))throw new Problem('Enter a valid completion date, no later than today.');
+ if(completed.slice(0,7)!==plan.month)throw new Problem('Choose a completion date within the goal month.');
  const existing=b.id?await db.prepare('SELECT * FROM submissions WHERE id=? AND plan_id=?').bind(text(b.id),plan.id).first<Submission>():null;
  if(b.id&&(!existing||!['review','changes'].includes(existing.status)||existing.version!==b.version))throw new Problem('Submission changed. Refresh and try again.',409);
  if(existing?.status==='review'){

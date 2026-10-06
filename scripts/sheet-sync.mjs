@@ -17,7 +17,8 @@ const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('h
 export const signedJson=value=>JSON.stringify(value).replace(/[\u007f-\uffff]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
 export function memberFingerprint(base,person){
  const d=base.data,plans=d.plans.filter(p=>p.member_id===person.id),ids=new Set(plans.map(p=>p.id));
- return digest({month:base.month,person,types:d.goal_types,plans,tasks:d.daily_tasks.filter(t=>t.member_id===person.id),submissions:d.submissions.filter(s=>ids.has(s.plan_id)),special:d.special_tasks.filter(t=>t.member_id===person.id)});
+ // Raise `layout` when the Apps Script report layout changes so every tab is sent again.
+ return digest({layout:2,month:base.month,person,types:d.goal_types,plans,tasks:d.daily_tasks.filter(t=>t.member_id===person.id),submissions:d.submissions.filter(s=>ids.has(s.plan_id)),special:d.special_tasks.filter(t=>t.member_id===person.id)});
 }
 const fields={people:'id,name,email,employee_id,role,manager_id,job,active',goal_types:'id,manager_id,name,unit',plans:'id,member_id,type_id,month,target,hours_per_job',daily_tasks:'id,member_id,work_date,original_work_date,title,category,quantity,due_date,priority,status,estimated_hours,actual_hours,notes,started_at,elapsed_seconds,submitted_at,version',submissions:'id,plan_id,daily_task_id,title,url,completed,quantity,status,feedback,version',special_tasks:'id,member_id,assigned_by,title,instructions,due_date,priority,status,output_url,feedback,version,created_at'};
 // Tasks whose deletion was approved are kept for the EOD report but never reach the sheet.
