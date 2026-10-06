@@ -1,2 +1,7 @@
 import ManagerWorkspace from './manager-workspace';
-export default function Home(){return <ManagerWorkspace/>}
+import {requireChatGPTUser} from './chatgpt-auth';
+
+export default async function Home(){
+  await requireChatGPTUser('/');
+  return <ManagerWorkspace/>;
+}
